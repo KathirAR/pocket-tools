@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personal Finance Tracker</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --bg:#f4f6f9; --card:#ffffff; --text:#1f2430; --muted:#6b7280; --border:#eef0f4;
@@ -139,16 +142,51 @@
   #toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:#1f2430; color:#fff; padding:10px 18px; border-radius:10px; font-size:13px; font-weight:600; opacity:0; transition:opacity .25s, transform .25s; z-index:100; box-shadow:0 6px 20px rgba(0,0,0,0.2); pointer-events:none;}
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
   #toast.err{background:#e5484d;}
+
+  #loginOverlay{position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:200; padding:20px;}
+  .login-card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:36px 32px; max-width:380px; width:100%; text-align:center;}
+  .login-card h1{font-size:22px; margin:0 0 8px;}
+  .login-card p{color:var(--muted); font-size:13.5px; line-height:1.5; margin:0 0 24px;}
+  .google-btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; background:#fff; color:#3c4043; border:1px solid #dadce0; padding:11px 16px; border-radius:10px; font-size:14px; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+  .google-btn:hover{background:#f8f9fa;}
+  .login-loading{font-size:13px; color:var(--muted);}
+  .user-bar{display:flex; align-items:center; gap:8px; background:var(--card); box-shadow:var(--shadow); border-radius:10px; padding:6px 8px 6px 12px; font-size:12.5px; color:var(--text);}
+  .user-bar img{width:24px; height:24px; border-radius:50%;}
+  .user-bar button{background:var(--border); color:var(--muted); font-size:11.5px; font-weight:600; padding:5px 10px; border-radius:7px;}
+  .user-bar button:hover{background:var(--red-soft); color:var(--red);}
+  .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--green); flex-shrink:0;}
+  .sync-dot.syncing{background:var(--orange);}
 </style>
 </head>
+
 <body>
-<div class="app">
+<!-- Login gate -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <h1>💰 Personal Finance Tracker</h1>
+    <p id="loginMsg">Sign in with Google to access your own private, cross-device tracker. Your data is tied to your account and never visible to anyone else.</p>
+    <button class="google-btn" id="googleSignInBtn" onclick="signInWithGoogle()">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4c-7.7 0-14.4 4.4-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 35.4 26.8 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.3 5.3C41.6 35.9 44 30.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+      Sign in with Google
+    </button>
+  </div>
+</div>
+
+<div class="app" id="appRoot" style="display:none;">
   <div class="topbar">
     <div>
       <h1>💰 Personal Finance Tracker</h1>
-      <div class="sub">Expenses, savings, investments, debts & goals — all in ₹, saved locally in your browser.</div>
+      <div class="sub">Expenses, savings, investments, debts & goals — all in ₹, synced to your account.</div>
     </div>
-    <button class="icon-btn" onclick="toggleDarkMode()" id="darkToggleBtn" title="Toggle dark mode">🌙</button>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="user-bar" id="userBar">
+        <span class="sync-dot" id="syncDot" title="Synced"></span>
+        <img id="userPhoto" src="" alt="">
+        <span id="userName"></span>
+        <button onclick="signOutUser()">Sign out</button>
+      </div>
+      <button class="icon-btn" onclick="toggleDarkMode()" id="darkToggleBtn" title="Toggle dark mode">🌙</button>
+    </div>
   </div>
 
   <div class="tabs">
@@ -545,16 +583,125 @@ let settings=JSON.parse(safeGet(SETTINGS_KEY)||'null')||{dark:false};
 let currentRange='month', editingId=null, barMonths=6;
 let chartNetWorth, chartBars, chartDoughnut, chartAlloc;
 
-function saveExpenses(){ safeSet(STORAGE_KEY, JSON.stringify(expenses)); }
-function saveCategories(){ safeSet(CAT_KEY, JSON.stringify(categories)); }
-function saveBudgetToStorage(){ safeSet(BUDGET_KEY, String(budget)); }
-function saveProfileToStorage(){ safeSet(PROFILE_KEY, JSON.stringify(profile)); }
-function saveRecordsToStorage(){ safeSet(RECORDS_KEY, JSON.stringify(monthlyRecords)); }
-function saveTargetsToStorage(){ safeSet(TARGETS_KEY, JSON.stringify(targets)); }
-function saveInvestTypesToStorage(){ safeSet(INVESTTYPES_KEY, JSON.stringify(investTypes)); }
-function saveDebtsToStorage(){ safeSet(DEBTS_KEY, JSON.stringify(debts)); }
-function saveGoalsToStorage(){ safeSet(GOALS_KEY, JSON.stringify(goals)); }
-function saveSettingsToStorage(){ safeSet(SETTINGS_KEY, JSON.stringify(settings)); }
+/* ===================== FIREBASE (LOGIN + CLOUD SYNC) ===================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDrAvRK2MPXESFyM3zX7azVbIZfYgC4tLw",
+  authDomain: "pocket-finance-tracker-c1386.firebaseapp.com",
+  projectId: "pocket-finance-tracker-c1386",
+  storageBucket: "pocket-finance-tracker-c1386.firebasestorage.app",
+  messagingSenderId: "809451071433",
+  appId: "1:809451071433:web:ed12a161bedd68eb00aa18"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let currentUser = null;
+let cloudSyncTimer = null;
+
+function signInWithGoogle(){
+  const provider = new firebase.auth.GoogleAuthProvider();
+  document.getElementById('googleSignInBtn').disabled = true;
+  document.getElementById('loginMsg').textContent = 'Opening Google sign-in…';
+  auth.signInWithPopup(provider).catch(err=>{
+    document.getElementById('googleSignInBtn').disabled = false;
+    document.getElementById('loginMsg').textContent = 'Sign in with Google to access your own private, cross-device tracker.';
+    toast('Sign-in failed: '+err.message, true);
+  });
+}
+function signOutUser(){
+  if(!confirm('Sign out of this device?')) return;
+  auth.signOut();
+}
+function buildCloudPayload(){
+  return {expenses, categories, budget, profile, monthlyRecords, targets, investTypes, debts, goals, settings, updatedAt: new Date().toISOString()};
+}
+function cacheAllLocally(){
+  safeSet(STORAGE_KEY, JSON.stringify(expenses));
+  safeSet(CAT_KEY, JSON.stringify(categories));
+  safeSet(BUDGET_KEY, String(budget));
+  safeSet(PROFILE_KEY, JSON.stringify(profile));
+  safeSet(RECORDS_KEY, JSON.stringify(monthlyRecords));
+  safeSet(TARGETS_KEY, JSON.stringify(targets));
+  safeSet(INVESTTYPES_KEY, JSON.stringify(investTypes));
+  safeSet(DEBTS_KEY, JSON.stringify(debts));
+  safeSet(GOALS_KEY, JSON.stringify(goals));
+  safeSet(SETTINGS_KEY, JSON.stringify(settings));
+}
+function scheduleCloudSync(){
+  if(!currentUser) return;
+  const dot=document.getElementById('syncDot');
+  if(dot) dot.classList.add('syncing');
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(()=>{
+    db.collection('financeTrackerUsers').doc(currentUser.uid).set(buildCloudPayload())
+      .then(()=>{ if(dot) dot.classList.remove('syncing'); })
+      .catch(err=>{ if(dot) dot.classList.remove('syncing'); toast('Cloud sync failed: '+err.message, true); });
+  }, 700);
+}
+function resetStateToDefaults(){
+  expenses=[]; categories=DEFAULT_CATEGORIES.slice(); budget=0;
+  profile={age:'',retireAge:60,income:'',inflation:6};
+  monthlyRecords=[]; targets={savings:null,invest:null}; investTypes=DEFAULT_INVEST_TYPES.slice();
+  debts=[]; goals=[]; settings={dark:false};
+}
+function loadFromCloud(uid){
+  return db.collection('financeTrackerUsers').doc(uid).get().then(docSnap=>{
+    if(docSnap.exists){
+      const data=docSnap.data();
+      expenses = Array.isArray(data.expenses) ? data.expenses : [];
+      categories = Array.isArray(data.categories) ? data.categories : DEFAULT_CATEGORIES;
+      budget = Number(data.budget)||0;
+      profile = data.profile || {age:'',retireAge:60,income:'',inflation:6};
+      monthlyRecords = Array.isArray(data.monthlyRecords) ? data.monthlyRecords : [];
+      targets = data.targets || {savings:null, invest:null};
+      investTypes = Array.isArray(data.investTypes) ? data.investTypes : DEFAULT_INVEST_TYPES;
+      debts = Array.isArray(data.debts) ? data.debts : [];
+      goals = Array.isArray(data.goals) ? data.goals : [];
+      settings = data.settings || {dark:false};
+      cacheAllLocally();
+      return true;
+    } else {
+      return db.collection('financeTrackerUsers').doc(uid).set(buildCloudPayload()).then(()=>false);
+    }
+  });
+}
+auth.onAuthStateChanged(user=>{
+  if(user){
+    currentUser=user;
+    document.getElementById('userName').textContent = user.displayName || user.email;
+    document.getElementById('userPhoto').src = user.photoURL || '';
+    loadFromCloud(user.uid).then(existed=>{
+      document.getElementById('loginOverlay').style.display='none';
+      document.getElementById('appRoot').style.display='block';
+      init();
+      if(!existed) toast('Welcome! Your data now syncs to your account.');
+    }).catch(err=>{
+      toast('Could not load your data: '+err.message, true);
+      document.getElementById('loginOverlay').style.display='none';
+      document.getElementById('appRoot').style.display='block';
+      init();
+    });
+  } else {
+    currentUser=null;
+    resetStateToDefaults();
+    document.getElementById('appRoot').style.display='none';
+    document.getElementById('loginOverlay').style.display='flex';
+    document.getElementById('googleSignInBtn').disabled=false;
+    document.getElementById('loginMsg').textContent='Sign in with Google to access your own private, cross-device tracker. Your data is tied to your account and never visible to anyone else.';
+  }
+});
+
+function saveExpenses(){ safeSet(STORAGE_KEY, JSON.stringify(expenses)); scheduleCloudSync(); }
+function saveCategories(){ safeSet(CAT_KEY, JSON.stringify(categories)); scheduleCloudSync(); }
+function saveBudgetToStorage(){ safeSet(BUDGET_KEY, String(budget)); scheduleCloudSync(); }
+function saveProfileToStorage(){ safeSet(PROFILE_KEY, JSON.stringify(profile)); scheduleCloudSync(); }
+function saveRecordsToStorage(){ safeSet(RECORDS_KEY, JSON.stringify(monthlyRecords)); scheduleCloudSync(); }
+function saveTargetsToStorage(){ safeSet(TARGETS_KEY, JSON.stringify(targets)); scheduleCloudSync(); }
+function saveInvestTypesToStorage(){ safeSet(INVESTTYPES_KEY, JSON.stringify(investTypes)); scheduleCloudSync(); }
+function saveDebtsToStorage(){ safeSet(DEBTS_KEY, JSON.stringify(debts)); scheduleCloudSync(); }
+function saveGoalsToStorage(){ safeSet(GOALS_KEY, JSON.stringify(goals)); scheduleCloudSync(); }
+function saveSettingsToStorage(){ safeSet(SETTINGS_KEY, JSON.stringify(settings)); scheduleCloudSync(); }
+
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -1384,8 +1531,6 @@ function clearAllData(){
   init();
   toast('All data erased');
 }
-
-init();
 </script>
 </body>
 </html>
