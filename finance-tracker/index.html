@@ -94,7 +94,7 @@
   .tx .info{flex:1; min-width:0;}
   .tx .desc{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .tx .cat{font-size:12px; color:var(--muted);}
-  .tx .amount{font-size:14px; font-weight:700; flex-shrink:0;}
+  .tx .amount{font-size:14px; font-weight:700; flex-shrink:0; text-align:right; line-height:1.5;}
   .tx .actions{display:flex; gap:4px; flex-shrink:0; opacity:0; transition:opacity .12s;}
   .tx:hover .actions{opacity:1;}
   .tx .actions button{background:var(--border); color:var(--muted); width:26px; height:26px; border-radius:8px; font-size:12px; display:flex; align-items:center; justify-content:center;}
@@ -300,7 +300,7 @@
         </div>
         <div class="card">
           <h2>Transactions</h2>
-          <div class="card-desc">Every expense in the selected period, searchable and sortable.</div>
+          <div class="card-desc">Every expense in the selected period, searchable and sortable. Use the ↩ icon on any item to record a refund/return — it's excluded from your totals automatically.</div>
           <div class="filters">
             <button data-range="day" onclick="setRange('day')">Today</button>
             <button data-range="week" onclick="setRange('week')">This Week</button>
@@ -326,6 +326,17 @@
   <div class="tabpage" id="tab-invest">
     <div class="grid2">
       <div>
+        <div class="card">
+          <h2>Quick Add: Gold Purchase</h2>
+          <div class="card-desc">Enter the total bill for a gold/jewellery purchase and it's split automatically: a % goes to Expenses (making charges, wastage, GST) as a "Jewellery" expense, and the rest is added straight to your Gold investment balance for that month.</div>
+          <div class="field"><label>Total bill amount</label><input type="number" id="goldAmount" step="1" min="0" placeholder="e.g. 50000" oninput="updateGoldSplitPreview()"></div>
+          <div class="row2">
+            <div class="field"><label>% to Expense (making/GST)</label><input type="number" id="goldExpensePct" step="1" min="0" max="100" value="20" oninput="updateGoldSplitPreview()"></div>
+            <div class="field"><label>Purchase date</label><input type="date" id="goldDate"></div>
+          </div>
+          <button class="btn-primary" onclick="addGoldPurchase()">Split & Add</button>
+          <div class="field-hint" id="goldSplitPreview" style="margin-top:10px;"></div>
+        </div>
         <div class="card">
           <h2>Add Monthly Record</h2>
           <div class="card-desc">Enter your <b>total account balances</b> as of this month — not what you added. The app works out what changed by comparing to your previous month's record. Re-saving the same month overwrites it.</div>
@@ -483,6 +494,11 @@
     <div class="field"><label>Category</label><select id="editCategory"></select></div>
     <div class="field"><label>Description</label><input type="text" id="editDescription"></div>
     <div class="field"><label>Date</label><input type="date" id="editDate"></div>
+    <div class="field">
+      <label>Refunded / returned amount (optional)</label>
+      <input type="number" id="editRefund" step="0.01" min="0" placeholder="0.00">
+    </div>
+    <div class="field-hint">Leave blank or 0 if not returned. Enter the full amount for a full refund, or a partial amount if only part was refunded (e.g. shipping wasn't refunded). Returned amounts are excluded from your totals, budget, and charts.</div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeEdit()">Cancel</button>
       <button class="btn-save" onclick="saveEdit()">Save</button>
@@ -583,6 +599,7 @@ function init(){
   document.getElementById('date').value=todayStr();
   document.getElementById('budgetInput').value=budget||'';
   document.getElementById('rmMonth').value=currentMonthStr();
+  document.getElementById('goldDate').value=todayStr();
   document.getElementById('pfAge').value=profile.age||'';
   document.getElementById('pfRetireAge').value=profile.retireAge||60;
   document.getElementById('pfIncome').value=profile.income||'';
@@ -682,13 +699,14 @@ function totalInvest(record){
 }
 
 /* ===================== EXPENSES ===================== */
+function netAmount(e){ return Math.max(0, e.amount - (e.refundAmount||0)); }
 function addExpense(){
   const amount=parseFloat(document.getElementById('amount').value);
   const category=document.getElementById('category').value;
   const description=document.getElementById('description').value.trim()||'(no description)';
   const date=document.getElementById('date').value||todayStr();
   if(!amount||amount<=0){ toast('Please enter a valid amount.', true); return; }
-  expenses.push({id:uid(), amount, category, description, date});
+  expenses.push({id:uid(), amount, category, description, date, refundAmount:0});
   saveExpenses();
   document.getElementById('amount').value=''; document.getElementById('description').value='';
   document.getElementById('date').value=todayStr();
@@ -708,6 +726,7 @@ function openEdit(id){
   document.getElementById('editCategory').value=e.category;
   document.getElementById('editDescription').value=e.description;
   document.getElementById('editDate').value=e.date;
+  document.getElementById('editRefund').value=e.refundAmount || '';
   document.getElementById('editModal').classList.add('show');
 }
 function closeEdit(){ editingId=null; document.getElementById('editModal').classList.remove('show'); }
@@ -715,12 +734,27 @@ function saveEdit(){
   const e=expenses.find(x=>x.id===editingId); if(!e) return;
   const amount=parseFloat(document.getElementById('editAmount').value);
   if(!amount||amount<=0){ toast('Please enter a valid amount.', true); return; }
+  const refundRaw=document.getElementById('editRefund').value;
+  const refundAmount = refundRaw==='' ? 0 : Math.max(0, parseFloat(refundRaw)||0);
+  if(refundAmount > amount){ toast('Refund can\'t be more than the original amount.', true); return; }
   e.amount=amount; e.category=document.getElementById('editCategory').value;
   e.description=document.getElementById('editDescription').value.trim()||'(no description)';
   e.date=document.getElementById('editDate').value||e.date;
+  e.refundAmount=refundAmount;
   saveExpenses(); closeEdit(); renderExpensesAll(); renderDashboard();
-  toast('Expense updated');
+  toast(refundAmount>0 ? 'Expense updated — refund recorded' : 'Expense updated');
 }
+function markReturned(id){
+  const e=expenses.find(x=>x.id===id); if(!e) return;
+  const input=prompt(`Refund amount for "${e.description}" (out of ${fmt2(e.amount)}):`, e.amount.toFixed(2));
+  if(input===null) return;
+  const refundAmount=Math.max(0, parseFloat(input)||0);
+  if(refundAmount > e.amount){ toast('Refund can\'t be more than the original amount.', true); return; }
+  e.refundAmount=refundAmount;
+  saveExpenses(); renderExpensesAll(); renderDashboard();
+  toast(refundAmount>0 ? 'Refund recorded' : 'Refund cleared');
+}
+
 function saveBudget(){
   const val=parseFloat(document.getElementById('budgetInput').value);
   budget=isNaN(val)?0:val;
@@ -748,7 +782,7 @@ function filterExpenses(range){
 function expensesInMonth(monthStr){ return expenses.filter(e=>e.date.slice(0,7)===monthStr); }
 function avgMonthlyExpense(){
   const byMonth={};
-  expenses.forEach(e=>{ const m=e.date.slice(0,7); byMonth[m]=(byMonth[m]||0)+e.amount; });
+  expenses.forEach(e=>{ const m=e.date.slice(0,7); byMonth[m]=(byMonth[m]||0)+netAmount(e); });
   const months=Object.keys(byMonth);
   if(months.length===0) return profile.income? profile.income*0.5 : 0;
   const total=months.reduce((s,m)=>s+byMonth[m],0);
@@ -759,8 +793,19 @@ function renderSummary(){
   const labels={day:'Today',week:'This Week',month:'This Month',all:'All Time'};
   document.getElementById('periodLabel').textContent=labels[currentRange];
   const filtered=filterExpenses(currentRange);
-  const total=filtered.reduce((s,e)=>s+e.amount,0);
+  const total=filtered.reduce((s,e)=>s+netAmount(e),0);
+  const totalReturned=filtered.reduce((s,e)=>s+(e.refundAmount||0),0);
   document.getElementById('totalAmount').textContent=fmt2(total);
+  const existingReturnedNote=document.getElementById('returnedNote');
+  if(existingReturnedNote) existingReturnedNote.remove();
+  if(totalReturned>0){
+    const note=document.createElement('div');
+    note.id='returnedNote';
+    note.className='stat-sub';
+    note.style.marginTop='4px';
+    note.textContent=`↩ ${fmt2(totalReturned)} returned this period (already excluded above)`;
+    document.getElementById('totalAmount').insertAdjacentElement('afterend', note);
+  }
   const budgetSection=document.getElementById('budgetSection');
   if(currentRange==='month' && budget>0){
     budgetSection.style.display='block';
@@ -777,7 +822,7 @@ function renderSummary(){
 function renderBreakdown(){
   const filtered=filterExpenses(currentRange);
   const totals={};
-  filtered.forEach(e=>{ totals[e.category]=(totals[e.category]||0)+e.amount; });
+  filtered.forEach(e=>{ totals[e.category]=(totals[e.category]||0)+netAmount(e); });
   const grand=Object.values(totals).reduce((a,b)=>a+b,0);
   const wrap=document.getElementById('catBreakdown'); wrap.innerHTML='';
   if(grand===0){ wrap.innerHTML='<div class="empty">No expenses in this period yet.</div>'; return; }
@@ -798,8 +843,8 @@ function renderTransactions(){
   filtered.sort((a,b)=>{
     if(sort==='date_desc') return a.date===b.date?0:(a.date<b.date?1:-1);
     if(sort==='date_asc') return a.date===b.date?0:(a.date>b.date?1:-1);
-    if(sort==='amt_desc') return b.amount-a.amount;
-    if(sort==='amt_asc') return a.amount-b.amount;
+    if(sort==='amt_desc') return netAmount(b)-netAmount(a);
+    if(sort==='amt_asc') return netAmount(a)-netAmount(b);
     return 0;
   });
   const listEl=document.getElementById('txList'); listEl.innerHTML='';
@@ -810,7 +855,7 @@ function renderTransactions(){
     filtered.forEach(e=>{ (groups[e.date]=groups[e.date]||[]).push(e); });
     const dateOrder=Object.keys(groups).sort((a,b)=> sort==='date_desc' ? (a<b?1:-1) : (a>b?1:-1));
     dateOrder.forEach(date=>{
-      const dayTotal=groups[date].reduce((s,e)=>s+e.amount,0);
+      const dayTotal=groups[date].reduce((s,e)=>s+netAmount(e),0);
       const group=document.createElement('div'); group.className='day-group';
       const disp=new Date(date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
       group.innerHTML=`<div class="day-header"><span>${disp}</span><span>${fmt2(dayTotal)}</span></div>`;
@@ -825,11 +870,17 @@ function renderTransactions(){
 function renderTxRow(e, showDate){
   const color=catColor(e.category);
   const tx=document.createElement('div'); tx.className='tx';
-  const dateLabel = showDate ? `<div class="cat">${e.category} · ${new Date(e.date+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div>` : `<div class="cat">${e.category}</div>`;
+  const isReturned = (e.refundAmount||0) > 0;
+  const isFullReturn = isReturned && e.refundAmount >= e.amount;
+  const catText = isReturned ? `${e.category} · ${isFullReturn?'Fully':'Partially'} returned` : e.category;
+  const dateLabel = showDate ? `<div class="cat">${catText} · ${new Date(e.date+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div>` : `<div class="cat">${catText}</div>`;
+  const amountHtml = isReturned
+    ? `<div class="amount"><span style="text-decoration:line-through; color:var(--muted); font-weight:500; font-size:12px;">${fmt2(e.amount)}</span><br>${fmt2(netAmount(e))}</div>`
+    : `<div class="amount">${fmt2(e.amount)}</div>`;
   tx.innerHTML=`<div class="icon" style="background:${color}">${e.category.charAt(0).toUpperCase()}</div>
     <div class="info"><div class="desc">${e.description}</div>${dateLabel}</div>
-    <div class="amount">${fmt2(e.amount)}</div>
-    <div class="actions"><button onclick="openEdit('${e.id}')" title="Edit">✎</button><button onclick="deleteExpense('${e.id}')" title="Delete">🗑</button></div>`;
+    ${amountHtml}
+    <div class="actions"><button onclick="markReturned('${e.id}')" title="${isReturned?'Edit return':'Mark as returned'}">↩</button><button onclick="openEdit('${e.id}')" title="Edit">✎</button><button onclick="deleteExpense('${e.id}')" title="Delete">🗑</button></div>`;
   return tx;
 }
 
@@ -863,7 +914,7 @@ function importCsv(event){
         if(!categories.some(c=>c.name.toLowerCase()===category.toLowerCase())){
           categories.push({name:category, color:PALETTE[categories.length%PALETTE.length]});
         }
-        expenses.push({id:uid(), amount, category, description: description||'(no description)', date});
+        expenses.push({id:uid(), amount, category, description: description||'(no description)', date, refundAmount:0});
         added++;
       });
       saveExpenses(); saveCategories();
@@ -878,6 +929,56 @@ function importCsv(event){
 }
 
 /* ===================== MONTHLY RECORDS ===================== */
+function updateGoldSplitPreview(){
+  const amount=parseFloat(document.getElementById('goldAmount').value)||0;
+  const pct=parseFloat(document.getElementById('goldExpensePct').value);
+  const expensePct = isNaN(pct) ? 20 : Math.min(100, Math.max(0, pct));
+  const preview=document.getElementById('goldSplitPreview');
+  if(amount<=0){ preview.textContent=''; return; }
+  const expensePortion = amount*expensePct/100;
+  const investPortion = amount-expensePortion;
+  preview.textContent = `Will add ${fmt2(expensePortion)} as a Jewellery expense, and ${fmt2(investPortion)} to your Gold investment balance.`;
+}
+function addGoldPurchase(){
+  const amount=parseFloat(document.getElementById('goldAmount').value);
+  if(!amount||amount<=0){ toast('Enter a valid bill amount.', true); return; }
+  const pct=parseFloat(document.getElementById('goldExpensePct').value);
+  const expensePct = isNaN(pct) ? 20 : Math.min(100, Math.max(0, pct));
+  const date=document.getElementById('goldDate').value||todayStr();
+  const expensePortion = Math.round(amount*expensePct/100*100)/100;
+  const investPortion = Math.round((amount-expensePortion)*100)/100;
+
+  if(!categories.some(c=>c.name.toLowerCase()==='jewellery')){
+    categories.push({name:'Jewellery', color:PALETTE[categories.length%PALETTE.length]});
+    saveCategories(); renderCategorySelects(); renderCategoryChips();
+  }
+  if(!investTypes.some(t=>t.name.toLowerCase()==='gold')){
+    investTypes.push({name:'Gold', color:PALETTE[investTypes.length%PALETTE.length]});
+    saveInvestTypesToStorage(); renderInvestTypeChips(); renderInvestInputs();
+  }
+
+  if(expensePortion>0){
+    expenses.push({id:uid(), amount:expensePortion, category:'Jewellery', description:'Gold purchase — making charges & GST', date, refundAmount:0});
+    saveExpenses();
+  }
+
+  const month=date.slice(0,7);
+  let rec=monthlyRecords.find(r=>r.month===month);
+  if(!rec){
+    const prior=monthlyRecords.filter(r=>r.month<month).sort((a,b)=>a.month<b.month?-1:1).pop();
+    rec={ month, income: prior?prior.income:0, savingsBalance: prior?prior.savingsBalance:0, investBalances: prior?{...prior.investBalances}:{}, investContribution:null };
+    monthlyRecords.push(rec);
+  }
+  rec.investBalances['Gold']=(rec.investBalances['Gold']||0)+investPortion;
+  if(rec.investContribution!=null) rec.investContribution += investPortion;
+  monthlyRecords.sort((a,b)=>a.month<b.month?-1:1);
+  saveRecordsToStorage();
+
+  document.getElementById('goldAmount').value='';
+  document.getElementById('goldSplitPreview').textContent='';
+  renderRecordsTable(); renderExpensesAll(); renderDashboard();
+  toast(`Split: ${fmt2(expensePortion)} → Jewellery expense, ${fmt2(investPortion)} → Gold investment`);
+}
 function addMonthlyRecord(){
   const month=document.getElementById('rmMonth').value;
   const income=parseFloat(document.getElementById('rmIncome').value)||0;
@@ -1139,7 +1240,7 @@ function renderDashboard(){
 function renderYearlySummary(deltas){
   const years={};
   monthlyRecords.forEach(r=>{ const y=r.month.slice(0,4); years[y]=years[y]||{income:0}; years[y].income += r.income||0; });
-  expenses.forEach(e=>{ const y=e.date.slice(0,4); years[y]=years[y]||{income:0}; years[y].expense = (years[y].expense||0)+e.amount; });
+  expenses.forEach(e=>{ const y=e.date.slice(0,4); years[y]=years[y]||{income:0}; years[y].expense = (years[y].expense||0)+netAmount(e); });
   deltas.forEach(d=>{ const y=d.record.month.slice(0,4); years[y]=years[y]||{income:0}; years[y].savedInvested = (years[y].savedInvested||0) + d.savedDelta + d.investDelta; });
   const tbody=document.getElementById('yearlyTable'); tbody.innerHTML='';
   const yearKeys=Object.keys(years).sort((a,b)=>b-a);
@@ -1174,7 +1275,7 @@ function renderCharts(sortedRecords, curMonth){
   const months=[]; const d=new Date();
   for(let i=barMonths-1;i>=0;i--){ const dt=new Date(d.getFullYear(), d.getMonth()-i, 1); months.push(dt.toISOString().slice(0,7)); }
   const incomeArr=months.map(m=>{ const r=sortedRecords.find(r=>r.month===m); return r?r.income:0; });
-  const expenseArr=months.map(m=>expensesInMonth(m).reduce((s,e)=>s+e.amount,0));
+  const expenseArr=months.map(m=>expensesInMonth(m).reduce((s,e)=>s+netAmount(e),0));
   const savedArr=months.map(m=>{
     const i2=sortedRecords.findIndex(r=>r.month===m);
     if(i2<0) return 0;
@@ -1193,7 +1294,7 @@ function renderCharts(sortedRecords, curMonth){
 
   const thisMonthExp=expensesInMonth(curMonth);
   const totals={};
-  thisMonthExp.forEach(e=>{ totals[e.category]=(totals[e.category]||0)+e.amount; });
+  thisMonthExp.forEach(e=>{ totals[e.category]=(totals[e.category]||0)+netAmount(e); });
   const ctx3=document.getElementById('chartDoughnut').getContext('2d');
   if(chartDoughnut) chartDoughnut.destroy();
   const labels=Object.keys(totals);
