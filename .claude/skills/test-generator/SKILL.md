@@ -7,6 +7,8 @@ description: Generates prioritized test cases (P0-P3) for Pocket Tracker from a 
 1. Only test behavior that exists in the code or in BEHAVIOR.md. Never invent features, fields, or screens that Pocket Tracker does not have.
 2. Every test case must have specific steps, an exact input, and a clear expected result that can be marked pass or fail. If it can't be judged pass or fail, don't include it.
 3. If the intended behavior is unclear, don't guess. Write the case under Open Questions with what is unclear, and mark any inferred expectation as an assumption.
+4. Smoke cases cover only the paths that must work on every build, where a failure means the feature is unusable. Give each feature area at most 3 Smoke cases.
+5. Mark a case P0 only if its failure breaks a money calculation or loses or corrupts user data. Do not give P0 to more than about a quarter of the cases. Use P1 to P3 for the rest, and use P3 for cosmetic and low-impact cases.
 
 # Scope
 1. If the user names a whole tool, read its code and BEHAVIOR.md, then split it into feature areas, such as screens or groups of related functions.
@@ -17,10 +19,11 @@ description: Generates prioritized test cases (P0-P3) for Pocket Tracker from a 
 # Output format
 Return a table with one row per test case and these columns:
 
-| ID | Priority | Category | Steps | Expected result | Assumption |
+| ID | Priority | Suite | Category | Steps | Expected result | Assumption |
 
 - ID: TC-001, TC-002, and so on.
 - Priority: P0 (critical) to P3 (low).
+- Suite : Smoke or Regression. Every smoke case should be part of a regression suite, but not every regression case is a smoke case.
 - Category: positive, negative, boundary, calculation, date/time zone, security, or access.
 - Steps: exact steps with exact input values.
 - Expected result: one specific, checkable outcome.
