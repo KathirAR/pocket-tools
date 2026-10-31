@@ -8,6 +8,12 @@ description: Generates prioritized test cases (P0-P3) for Pocket Tracker from a 
 2. Every test case must have specific steps, an exact input, and a clear expected result that can be marked pass or fail. If it can't be judged pass or fail, don't include it.
 3. If the intended behavior is unclear, don't guess. Write the case under Open Questions with what is unclear, and mark any inferred expectation as an assumption.
 
+# Scope
+1. If the user names a whole tool, read its code and BEHAVIOR.md, then split it into feature areas, such as screens or groups of related functions.
+2. List the areas you found before generating anything.
+3. Cover one area at a time, each under its own heading, so every area can be reviewed on its own.
+4. If the user names one function or feature, test only that.
+
 # Output format
 Return a table with one row per test case and these columns:
 
