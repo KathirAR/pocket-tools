@@ -21,3 +21,13 @@ Return a table with one row per test case and these columns:
 - Assumption: what the code appears to intend, or "none" if BEHAVIOR.md states it.
 
 After the table, add an "Open questions" list for anything unclear.
+
+# Saving and returning results
+1. Identify the target tool's folder from the user's request. If it's unclear, ask before generating anything.
+2. Read <tool-folder>/BEHAVIOR.md if it exists. If not, infer expected behavior from the code and say so in the Assumption column.
+3. Save results to <tool-folder>/<tool-folder>-test-cases.md, for example finance-tracker/finance-tracker-test-cases.md. Create it if missing.
+4. Use one heading per function or feature. Append new cases under the matching heading, and create the heading if it's missing.
+5. Never overwrite or delete existing test cases. Skip any case that already exists, and report how many were skipped.
+6. Label each new section with the date and "Status: unreviewed".
+7. Never commit or push. Tell the user which file changed, so they can review it and commit it themselves.
+8. In the reply, give the file path, the number of cases added and skipped, and the open questions.
