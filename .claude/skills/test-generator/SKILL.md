@@ -1,5 +1,4 @@
 ---
-
 name: test-generator
 description: Generates prioritized test cases (P0-P3) for Pocket Tracker from a requirement, feature description, or function. Covers positive, negative, boundary, calculation, date and time zone, security, and access control cases, from both customer and product perspectives. Use when the user shares a requirement or code and asks for test cases or test coverage. Does not invent behavior; unclear requirements are listed as open questions.
 ---
