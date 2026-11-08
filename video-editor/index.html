@@ -261,7 +261,8 @@ details[open] summary{margin-bottom:10px}
         <button data-ai="ref">Make it like a reference<small>Upload a reel you like plus your clips; AI drafts the edit</small></button>
         <button data-ai="caps">Auto captions<small>Turn the speech in your clips into timed captions</small></button>
         <button data-ai="trends">Trending ideas<small>Songs, hooks, captions and hashtags for your niche</small></button>
-        <div class="acct" id="aiAcct">Not signed in</div>
+        <button data-ai="settings">AI settings<small>Free Gemini key, on-device captions, or your Firebase backend</small></button>
+        <div class="acct" id="aiAcct">Not set up</div>
       </div>
     </span>
     <button class="btn" id="projBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Project</button>
@@ -1434,7 +1435,7 @@ function ensureFirebase(){
   return FB.loading;
 }
 function aiUnavailable(){
-  openModal(`<h2>AI features aren't reachable here</h2><p>Cutline's AI runs on your Firebase backend. This preview can't connect to it, or the backend hasn't been deployed yet.</p>
+  openModal(`<h2>AI features aren't reachable here</h2><p>You chose the Firebase backend in AI settings, but this page can't reach it, or it hasn't been deployed yet. Switch to the free Gemini option in AI settings, or deploy the backend.</p>
     <p>Open the hosted editor (for example <span class="num">kathirar.github.io/pocket-tools/video-editor/</span>) and follow <span class="num">video-editor/AI-SETUP.md</span> in the repo to deploy the backend.</p>
     <div class="mactions"><button class="btn" id="mClose">Close</button></div>`); $("#mClose").onclick = closeModal;
 }
@@ -1445,11 +1446,154 @@ async function ensureSignedIn(){
   catch(e){ toast(e && e.code === "auth/unauthorized-domain" ? "Add this site to Firebase Auth's authorized domains first." : "Sign-in was cancelled."); return false; }
 }
 function updAcct(){ const el = $("#aiAcct"); if (!el) return;
+  const usesFb = AIS.engine === "firebase" || AIS.capEngine === "firebase";
+  if (!usesFb){ el.innerHTML = `<span>${AIS.key ? "Gemini key saved" : "No Gemini key yet"} · captions ${AIS.capEngine === "local" ? "on this device" : "via Gemini"}</span>`; return; }
   if (FB.user){ el.innerHTML = `<span>${esc(FB.user.email || "Signed in")}</span><button id="aiOut">Sign out</button>`; $("#aiOut").onclick = e => { e.stopPropagation(); FB.auth.signOut(); }; }
   else { el.innerHTML = `<span>Sign in to use AI</span><button id="aiIn">Sign in with Google</button>`; $("#aiIn").onclick = e => { e.stopPropagation(); ensureSignedIn(); }; } }
 async function callFn(name, data){
   try { return (await FB.fns.httpsCallable(name, { timeout:540000 })(data)).data; }
   catch(e){ const m = e && e.message || ""; throw new Error(/not-found|internal/i.test(e.code || "") && /not found/i.test(m) ? "The AI backend isn't deployed yet. See AI-SETUP.md." : m || "The request failed."); }
+}
+// ---- AI settings & providers: on-device Whisper, Gemini (free key), or the Firebase backend ----
+const AI_DEFAULTS = { engine:"gemini", key:"", model:"", capEngine:"local", localModel:"Xenova/whisper-base" };
+const AIS = (() => { try { return Object.assign({}, AI_DEFAULTS, JSON.parse(localStorage.getItem("cutline-ai") || "{}")); } catch(e){ return Object.assign({}, AI_DEFAULTS); } })();
+const saveAIS = () => { try { localStorage.setItem("cutline-ai", JSON.stringify(AIS)); } catch(e){} };
+const GEM = "https://generativelanguage.googleapis.com/v1beta";
+async function gemModels(key){
+  const r = await fetch(`${GEM}/models?pageSize=200`, { headers:{ "x-goog-api-key":key } });
+  if (!r.ok) throw new Error(r.status === 400 || r.status === 403 ? "Google didn't accept that key. Copy it again from AI Studio." : `Couldn't reach Gemini (${r.status}).`);
+  const j = await r.json();
+  return (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent") && /^models\/gemini-[\d.]+-(flash|pro)(-lite)?(-latest)?$/.test(m.name)).map(m => m.name.replace("models/", ""));
+}
+function pickModel(list){ const score = n => { const v = parseFloat((n.match(/gemini-([\d.]+)/) || [0,0])[1]); return v*10 + (/-flash$/.test(n) ? 3 : /-flash-lite/.test(n) ? 1 : /-pro/.test(n) ? 0 : 2); };
+  return [...list].sort((a,b) => score(b) - score(a))[0] || ""; }
+async function gemini(parts, { system, json, search, temperature = .6 } = {}){
+  if (!AIS.key) throw new Error("Add your free Gemini key in AI settings first.");
+  if (!AIS.model){ AIS.model = pickModel(await gemModels(AIS.key)); saveAIS(); if (!AIS.model) throw new Error("No Gemini model is available for this key."); }
+  const body = { contents:[{ role:"user", parts }], generationConfig:{ temperature } };
+  if (system) body.systemInstruction = { parts:[{ text:system }] };
+  if (json) body.generationConfig.responseMimeType = "application/json";
+  if (search) body.tools = [{ google_search:{} }];
+  const r = await fetch(`${GEM}/models/${encodeURIComponent(AIS.model)}:generateContent`, { method:"POST", headers:{ "Content-Type":"application/json", "x-goog-api-key":AIS.key }, body:JSON.stringify(body) });
+  if (!r.ok){ const t = await r.text().catch(() => "");
+    if (r.status === 429) throw new Error("Gemini's free limit is used up for now. Wait a minute (or until tomorrow) and try again.");
+    if (r.status === 400 && /API key/i.test(t)) throw new Error("Google didn't accept your Gemini key. Check it in AI settings.");
+    if (search && /search|grounding|tool/i.test(t)) throw new Error("Google Search isn't available on this key's plan, so trends can't be fetched.");
+    throw new Error(`Gemini returned an error (${r.status}).`); }
+  const j = await r.json(), cand = (j.candidates || [])[0];
+  if (!cand || !cand.content) throw new Error("Gemini didn't return an answer. Try again.");
+  const text = (cand.content.parts || []).map(p => p.text || "").join("");
+  const sources = ((cand.groundingMetadata || {}).groundingChunks || []).map(c => c.web).filter(Boolean).map(w => ({ title:w.title || w.uri, url:w.uri }));
+  return { text, sources };
+}
+function parseJsonLoose(t){ const tag = t.match(/<json>([\s\S]*?)<\/json>/), fence = t.match(/```(?:json)?\s*([\s\S]*?)```/); const raw = tag ? tag[1] : fence ? fence[1] : t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1); return JSON.parse(raw); }
+// on-device Whisper runs in a worker so the editor stays responsive
+let asrWorker = null, asrSeq = 0; const asrJobs = new Map();
+function getAsrWorker(){
+  if (asrWorker) return asrWorker;
+  const src = `import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1/dist/transformers.web.min.js";
+let asr = null, cur = "";
+self.onmessage = async (e) => { const { id, audio, language, model } = e.data;
+  try {
+    if (!asr || cur !== model){ asr = await pipeline("automatic-speech-recognition", model, { dtype:"q8", progress_callback:(p) => { if (p.status === "progress") self.postMessage({ id, type:"load", p:(p.progress || 0)/100 }); } }); cur = model; }
+    self.postMessage({ id, type:"run" });
+    const opt = { return_timestamps:true, chunk_length_s:30, stride_length_s:5, task:"transcribe" }; if (language) opt.language = language;
+    const out = await asr(audio, opt);
+    self.postMessage({ id, type:"done", out });
+  } catch (err) { self.postMessage({ id, type:"error", message:String(err && err.message || err) }); } };`;
+  asrWorker = new Worker(URL.createObjectURL(new Blob([src], { type:"text/javascript" })), { type:"module" });
+  asrWorker.onmessage = e => { const j = asrJobs.get(e.data.id); if (!j) return;
+    if (e.data.type === "load") j.onLoad && j.onLoad(e.data.p);
+    else if (e.data.type === "done"){ asrJobs.delete(e.data.id); j.res(e.data.out); }
+    else if (e.data.type === "error"){ asrJobs.delete(e.data.id); j.rej(new Error("On-device captions failed: " + e.data.message)); } };
+  asrWorker.onerror = () => { asrJobs.forEach(j => j.rej(new Error("On-device captions couldn't start here. Open the hosted editor, or switch captions to Gemini in AI settings."))); asrJobs.clear(); asrWorker = null; };
+  return asrWorker;
+}
+const LANG_NAMES = { en:"english", ta:"tamil", hi:"hindi", te:"telugu", ml:"malayalam", kn:"kannada" };
+function splitSegWords(segs){ const words = []; segs.forEach(s => { const ws = s.text.trim().split(/\s+/).filter(Boolean), d = Math.max(.05, s.end - s.start)/Math.max(1, ws.length);
+  ws.forEach((w, i) => words.push({ start:s.start + i*d, end:s.start + (i+1)*d, word:w })); }); return words; }
+let asrOnLoad = null;
+async function aiTranscribe(slice, language){
+  if (AIS.capEngine === "firebase") return callFn("transcribe", { audio:wavB64(slice), language });
+  if (AIS.capEngine === "gemini"){
+    const { text } = await gemini([{ text:`Transcribe this audio exactly, in the language and script it is spoken in${language && language !== "auto" ? ` (${LANG_NAMES[language] || language})` : ""}. Return JSON {"segments":[{"start":seconds,"end":seconds,"text":"..."}]} with short segments of about 2-5 words and timestamps measured from the start of this audio. Return {"segments":[]} if nobody speaks.` },
+      { inline_data:{ mime_type:"audio/wav", data:wavB64(slice) } }], { json:true, temperature:0 });
+    const segs = (parseJsonLoose(text).segments || []).map(s => ({ start:+s.start || 0, end:+s.end || 0, text:String(s.text || "").trim() })).filter(s => s.text && s.end > s.start);
+    return { segments:segs, words:splitSegWords(segs) };
+  }
+  const id = ++asrSeq, w = getAsrWorker(), audio = new Float32Array(slice);
+  const out = await new Promise((res, rej) => { asrJobs.set(id, { res, rej, onLoad:asrOnLoad }); w.postMessage({ id, audio, language:language && language !== "auto" ? LANG_NAMES[language] : null, model:AIS.localModel }, [audio.buffer]); });
+  const segs = (out.chunks || []).map(c => ({ start:c.timestamp[0] || 0, end:c.timestamp[1] ?? (c.timestamp[0] + 2), text:String(c.text || "").trim() })).filter(s => s.text);
+  return { segments:segs, words:splitSegWords(segs) };
+}
+const PLAN_PROMPT = `You are a senior short-form video editor for Instagram Reels, YouTube Shorts and TikTok creators in India.
+You get frames and timing data from a REFERENCE video the creator likes, plus frames (and sometimes transcripts) of the creator's OWN clips.
+Build an edit of the creator's clips that recreates the reference's structure, pacing, text treatment and look, and improve on it: a hook in the first 1.5 seconds, no dead air, a clear payoff or reveal, and a call to action near the end.
+Rules: use only the mediaId values given and keep in/out inside each clip's duration (photos run 1-4 s). Match the reference's average shot length unless told otherwise, and hit the target length. Keep text y between 0.12 and 0.75 for 9:16 and lines short. Write on-screen text in the requested language ("tamil" font for Tamil script; Tanglish = Tamil in English letters). Text times are on the final timeline from 0. Never copy the reference's exact words.
+Reply with JSON only, shaped like:
+{"summary":"2-4 sentences","look":"${Object.keys(LOOKS).join("|")}",
+ "segments":[{"mediaId":"","in":0,"out":0,"speed":1,"motion":"${MOTIONS.map(m => m[0]).join("|")}","transition":"${TRANS.map(t => t[0]).join("|")}","transitionDuration":0.4,"note":""}],
+ "texts":[{"text":"","style":"${Object.keys(PRESETS).join("|")}","font":"${Object.keys(FONTS).join("|")}","start":0,"end":0,"y":0.4,"animation":"none|fade|pop|slide|float|type|words"}],
+ "stickers":[{"emoji":"","start":0,"end":0,"x":0.8,"y":0.3,"size":0.15}],
+ "captionsFromSpeech":false,"music":{"mood":"","bpm":0,"searchTerms":[""]},"postCaption":"","hashtags":["#"]}`;
+async function aiPlan(d){
+  if (AIS.engine === "firebase") return (await callFn("planEdit", d)).plan;
+  const ref = d.reference, parts = [{ text:`FORMAT: ${d.aspect} | TARGET LENGTH: ${(+d.targetLength).toFixed(1)}s | ON-SCREEN TEXT LANGUAGE: ${d.language}
+CREATOR'S GOAL: ${d.goal || "(not given)"}
+${d.music ? `MUSIC: about ${d.music.bpm} BPM; beats (s): ${d.music.beats.map(b => b.toFixed(2)).join(", ")}` : "NO MUSIC YET"}
+REFERENCE: ${ref.duration.toFixed(1)}s, ${ref.width}x${ref.height}, ${ref.shots.length} shots, average ${ref.avgShot.toFixed(2)}s. Shots: ${ref.shots.map(s => `${s.start.toFixed(2)}-${s.end.toFixed(2)}`).join(", ")}` }];
+  ref.frames.forEach(f => { parts.push({ text:`Reference @ ${f.t.toFixed(2)}s` }, { inline_data:{ mime_type:"image/jpeg", data:f.b64 } }); });
+  parts.push({ text:"CREATOR'S CLIPS:" });
+  d.clips.forEach(c => { parts.push({ text:`mediaId=${c.id} | ${c.kind === "image" ? "photo" : "video"} | duration ${(+c.duration).toFixed(2)}s | ${c.width}x${c.height} | "${c.name}"${c.transcript ? `\nSpeech: ${c.transcript.slice(0, 1500)}` : ""}` });
+    c.frames.forEach(f => parts.push({ text:`${c.id} @ ${f.t.toFixed(2)}s` }, { inline_data:{ mime_type:"image/jpeg", data:f.b64 } })); });
+  const { text } = await gemini(parts, { system:PLAN_PROMPT, json:true, temperature:.7 });
+  return parseJsonLoose(text);
+}
+const TRENDS_PROMPT = `You research what is trending RIGHT NOW on Instagram Reels for a creator's niche and region. Use Google Search, prefer sources from the last 30 days, and never invent songs or trends.
+Reply with a one-line note, then JSON inside <json></json>:
+{"songs":[{"title":"","artist":"","from":"film/album or empty","why":"why it's trending / how creators use it","source":"url"}],"hooks":[""],"captions":[""],"hashtags":["#"],"formats":[{"name":"","how":""}],"notes":"how fresh and certain this is"}
+Give 6-10 songs, 6 hooks, 4 captions, 15-25 hashtags and 3-5 formats.`;
+async function aiTrends(d){
+  if (AIS.engine === "firebase") return callFn("trends", d);
+  const key = "cutline-trend:" + [d.niche, d.region, d.language].join("|").toLowerCase();
+  try { const c = JSON.parse(localStorage.getItem(key) || "null"); if (c && Date.now() - c.at < 12*3600*1000) return Object.assign({ cached:true }, c); } catch(e){}
+  const today = new Date().toISOString().slice(0, 10);
+  const { text, sources } = await gemini([{ text:`Today is ${today}. Niche: ${d.niche}. Audience: ${d.region}. Caption language: ${d.language}. What's trending on Instagram Reels for this right now?` }], { system:TRENDS_PROMPT, search:true, temperature:.4 });
+  const j = parseJsonLoose(text);
+  const out = { songs:(j.songs || []).slice(0, 12), hooks:(j.hooks || []).slice(0, 10), captions:(j.captions || []).slice(0, 6), hashtags:(j.hashtags || []).slice(0, 30), formats:(j.formats || []).slice(0, 6),
+    notes:String(j.notes || ""), sources:sources.slice(0, 10), asOf:today, niche:d.niche, region:d.region, language:d.language, at:Date.now() };
+  out.songs.forEach(s => { if (!/^https?:\/\//.test(s.source || "")) s.source = ""; });
+  try { localStorage.setItem(key, JSON.stringify(out)); } catch(e){}
+  return out;
+}
+async function aiReady(kind){
+  const eng = kind === "captions" ? AIS.capEngine : AIS.engine;
+  if (eng === "firebase") return ensureSignedIn();
+  if (eng === "gemini" && !AIS.key){ toast("Add your free Gemini key first."); openAISettings(); return false; }
+  return true;
+}
+function openAISettings(){
+  openModal(`<h2>AI settings</h2><p>Everything here is free. Settings and your key stay in this browser only.</p>
+    <h3>Auto-edit and trends</h3>
+    <div class="seg text" role="group" id="asEng" style="margin-bottom:10px"><button data-v="gemini" aria-pressed="${AIS.engine === "gemini"}">Gemini (free key)</button><button data-v="firebase" aria-pressed="${AIS.engine === "firebase"}">My Firebase backend</button></div>
+    <div class="field"><label for="asKey">Gemini API key</label><div class="row" style="flex-wrap:nowrap"><input class="inp" id="asKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" value="${esc(AIS.key)}"><button class="btn" id="asTest">Check</button></div>
+      <span class="hint">Get one free at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. No card needed. On the free tier Google may use what you send (frames, audio, text) to improve its products, and there are per-minute and daily limits.</span></div>
+    <div class="field"><label for="asModel">Model</label><select class="inp" id="asModel"><option value="${esc(AIS.model)}">${esc(AIS.model || "Picked automatically")}</option></select></div>
+    <h3>Auto captions</h3>
+    <div class="seg text" role="group" id="asCap" style="margin-bottom:10px"><button data-v="local" aria-pressed="${AIS.capEngine === "local"}">On this device</button><button data-v="gemini" aria-pressed="${AIS.capEngine === "gemini"}">Gemini</button><button data-v="firebase" aria-pressed="${AIS.capEngine === "firebase"}">Firebase</button></div>
+    <div class="field" id="asLocalBox"><label for="asLocal">On-device model</label><select class="inp" id="asLocal">${opts([["Xenova/whisper-base","Fast · about 80 MB download"],["Xenova/whisper-small","More accurate · about 250 MB download"]], AIS.localModel)}</select>
+      <span class="hint">Free and private: audio never leaves your device. Downloads once, then works offline. Tamil and Hindi are more accurate with the larger model or with Gemini.</span></div>
+    <div class="mactions"><button class="btn" id="mClose">Cancel</button><button class="btn primary" id="mGo">Save</button></div>`);
+  const st = { engine:AIS.engine, capEngine:AIS.capEngine };
+  const seg = (id, k) => $(id).querySelectorAll("[data-v]").forEach(b => b.onclick = () => { st[k] = b.dataset.v; $(id).querySelectorAll("[data-v]").forEach(x => x.setAttribute("aria-pressed", x === b)); $("#asLocalBox").hidden = st.capEngine !== "local"; });
+  seg("#asEng", "engine"); seg("#asCap", "capEngine"); $("#asLocalBox").hidden = st.capEngine !== "local";
+  const loadModels = async () => { const k = $("#asKey").value.trim(); if (!k){ toast("Paste your key first."); return; }
+    try { const list = await gemModels(k), best = pickModel(list), cur = list.includes(AIS.model) ? AIS.model : best;
+      $("#asModel").innerHTML = list.map(m => `<option value="${esc(m)}" ${m === cur ? "selected" : ""}>${esc(m)}${m === best ? " (recommended)" : ""}</option>`).join(""); toast(`Key works · ${list.length} models available`); }
+    catch(e){ toast(e.message || "Couldn't check the key here. This works in the hosted editor."); } };
+  $("#asTest").onclick = loadModels;
+  $("#mClose").onclick = closeModal;
+  $("#mGo").onclick = () => { Object.assign(AIS, st, { key:$("#asKey").value.trim(), model:$("#asModel").value, localModel:$("#asLocal").value }); saveAIS(); updAcct(); closeModal(); toast("AI settings saved"); };
 }
 async function copyText(t, btn){ try { await navigator.clipboard.writeText(t); toast("Copied"); } catch(e){ const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Copied"); } catch(_){ toast("Select the text and copy it."); } ta.remove(); } }
 
@@ -1457,8 +1601,9 @@ async function copyText(t, btn){ try { await navigator.clipboard.writeText(t); t
 async function pcm16k(m){
   if (m.pcm) return m.pcm;
   const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!Off) throw new Error("This browser can't read audio.");
-  const ab = await new Off(1, 16000, 16000).decodeAudioData(await m.blob.arrayBuffer());
-  m.pcm = ab.getChannelData(0); return m.pcm;
+  try { const ab = await new Off(1, 16000, 16000).decodeAudioData(await m.blob.arrayBuffer()); m.pcm = ab.getChannelData(0); }
+  catch(e){ m.pcm = new Float32Array(0); }
+  return m.pcm;
 }
 function wavB64(s){
   const n = s.length, buf = new ArrayBuffer(44 + n*2), v = new DataView(buf), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o+i, t.charCodeAt(i)); };
@@ -1469,9 +1614,11 @@ function wavB64(s){
 }
 async function transcribeRange(m, a, b, language, onChunk){
   const pcm = await pcm16k(m), words = [], segs = [], CH = 110;
+  if (!pcm.length) return { words, segs };
+  b = Math.min(b, pcm.length/16000);
   for (let s = a; s < b - .2; s += CH){
     const e = Math.min(b, s + CH), slice = pcm.subarray(Math.floor(s*16000), Math.floor(e*16000));
-    const r = await callFn("transcribe", { audio:wavB64(slice), language });
+    const r = await aiTranscribe(slice, language);
     (r.words || []).forEach(w => words.push({ start:w.start + s, end:w.end + s, word:w.word }));
     (r.segments || []).forEach(g => segs.push({ start:g.start + s, end:g.end + s, text:g.text }));
     onChunk && onChunk((e - a)/(b - a));
@@ -1483,7 +1630,8 @@ function localFromSrc(c, src){ const span = c.out - c.in; if (span <= 0) return 
 function groupWords(words, maxWords = 5, maxDur = 2.6){
   const out = []; let cur = null;
   words.forEach(w => { if (!w.word) return;
-    if (!cur){ cur = { start:w.start, end:w.end, text:w.word, n:1 }; }
+    if (cur && (w.start - cur.end > .8 || w.ci !== cur.ci)){ out.push(cur); cur = null; }
+    if (!cur){ cur = { start:w.start, end:w.end, text:w.word, n:1, ci:w.ci }; }
     else { cur.text += " " + w.word; cur.end = w.end; cur.n++; }
     if (cur.n >= maxWords || cur.end - cur.start >= maxDur || /[.!?,।]$/.test(w.word)){ out.push(cur); cur = null; } });
   if (cur) out.push(cur);
@@ -1510,15 +1658,16 @@ async function autoCaptions(style, language, replace){
   refreshLayout();
   const list = LY.filter(e => { const m = media.get(e.c.mediaId); return m && m.kind === "video" && !e.c.muted; });
   if (!list.length){ closeModal(); toast("Add video clips with speech first."); return; }
-  if (!(await ensureSignedIn())) return;
-  const pm = progressModal("Making captions", ["Reading audio from your clips", "Transcribing speech", "Placing captions"]);
+  if (!(await aiReady("captions"))) return;
+  const pm = progressModal("Making captions", [AIS.capEngine === "local" ? "Loading the speech model (first time only)" : "Reading audio from your clips", "Transcribing speech", "Placing captions"]);
+  asrOnLoad = p => { pm.note(`Downloading the speech model… ${Math.round(p*100)}%`); pm.bar(p); };
   try {
     const all = []; pm.step(0);
     for (let k = 0; k < list.length; k++){ const e = list[k], m = media.get(e.c.mediaId);
       pm.step(1); pm.note(`Clip ${k+1} of ${list.length}: ${m.name}`);
       const { words } = await transcribeRange(m, e.c.in, e.c.out, language, p => pm.bar((k + p)/list.length));
       const visibleEnd = e.end - e.td;
-      words.forEach(w => { const s = e.start + localFromSrc(e.c, w.start), en = e.start + localFromSrc(e.c, w.end); if (s >= e.start - .05 && s < visibleEnd) all.push({ start:s, end:Math.min(en, visibleEnd), word:w.word }); });
+      words.forEach(w => { const s = e.start + localFromSrc(e.c, w.start), en = e.start + localFromSrc(e.c, w.end); if (s >= e.start - .05 && s < visibleEnd) all.push({ start:s, end:Math.min(en, visibleEnd), word:w.word, ci:k }); });
     }
     pm.step(2);
     if (!all.length){ closeModal(); toast("No speech found in your clips."); return; }
@@ -1580,7 +1729,8 @@ function openReferenceEdit(){
     runReferenceEdit(refFile, ids, { goal:$("#refGoal").value.trim(), language:$("#refLang").value, len:$("#refLen").value, speech:$("#refSpeech").checked }); };
 }
 async function runReferenceEdit(refFile, ids, o){
-  if (!(await ensureSignedIn())) return;
+  if (!(await aiReady("plan"))) return;
+  if (o.speech && !(await aiReady("captions"))) return;
   $("#modal").classList.remove("wide");
   const pm = progressModal("Drafting your edit", ["Studying the reference's cuts and frames", "Looking at your clips", o.speech ? "Transcribing your clips" : "Preparing", "Writing the edit plan", "Building the timeline"]);
   try {
@@ -1594,9 +1744,9 @@ async function runReferenceEdit(refFile, ids, o){
     pm.step(3); pm.bar(.1); pm.note("This takes about 20–60 seconds.");
     let music = null; if (S.music){ const mm = media.get(S.music.mediaId); music = { bpm:mm && mm.beatInfo ? mm.beatInfo.bpm : 0, beats:S.beats.slice(0, 80) }; }
     const target = o.len === "match" ? ref.duration : +o.len;
-    const res = await callFn("planEdit", { aspect:S.aspect, targetLength:target, language:o.language, goal:o.goal, music, reference:ref, clips });
+    const plan = await aiPlan({ aspect:S.aspect, targetLength:target, language:o.language, goal:o.goal, music, reference:ref, clips });
     pm.step(4); pm.bar(1);
-    applyPlan(res.plan); showPlanResult(res.plan, o);
+    applyPlan(plan); showPlanResult(plan, o);
   } catch(e){ closeModal(); toast(e.message || "The AI couldn't make a draft."); }
 }
 const pickEnum = (v, list, d) => list.some(x => (Array.isArray(x) ? x[0] : x) === v) ? v : d;
@@ -1610,6 +1760,7 @@ function applyPlan(plan){
   if (!segs.length) throw new Error("The AI's plan didn't use any of your clips. Try again.");
   checkpoint();
   S.clips = segs; refreshLayout(); const tot = total();
+  S.beats = S.beats.filter(b => b <= tot + .01);
   S.texts = (plan.texts || []).filter(t => t && t.text).map(t => { const st = clamp(num0(t.start), 0, tot), x = mkText(pickEnum(t.style, Object.keys(PRESETS), "title"), String(t.text).slice(0, 200), st, clamp(num0(t.end) || st + 2.5, st + .3, tot));
     if (FONTS[t.font]) x.font = t.font; if (isFinite(t.y)) x.y = clamp(+t.y, .08, .85); if (t.animation) x.anim = pickEnum(t.animation, ["none","fade","pop","slide","float","type","words"], x.anim); return x; });
   S.overlays = (plan.stickers || []).filter(s => s && s.emoji).slice(0, 12).map(s => { const st = clamp(num0(s.start), 0, tot);
@@ -1641,9 +1792,9 @@ function openTrends(niche){
   $("#mClose").onclick = closeModal;
   $("#mGo").onclick = async () => { const n = $("#trNiche").value.trim(); if (!n){ toast("Describe your niche first."); return; } lastTrendNiche = n;
     const region = $("#trRegion").value, language = $("#trLang").value;
-    if (!(await ensureSignedIn())) return;
+    if (!(await aiReady("trends"))) return;
     const pm = progressModal("Searching for trends", ["Searching the web", "Picking what fits your niche"]); pm.step(0); pm.bar(.3); pm.note("This takes about 30–60 seconds.");
-    try { const r = await callFn("trends", { niche:n, region, language }); pm.step(1); pm.bar(1); showTrends(r); }
+    try { const r = await aiTrends({ niche:n, region, language }); pm.step(1); pm.bar(1); showTrends(r); }
     catch(e){ closeModal(); toast(e.message || "Couldn't fetch trends."); } };
 }
 function showTrends(r){
@@ -1654,6 +1805,7 @@ function showTrends(r){
     <h3>Hooks for on-screen text</h3><div class="list">${(r.hooks || []).map(h => `<div class="item"><div>${esc(h)}</div><button class="btn sm" data-hook="${esc(h)}">Add as title</button></div>`).join("")}</div>
     <h3>Post captions</h3><div class="list">${(r.captions || []).map(c => `<div class="item"><div>${esc(c)}</div><button class="btn sm" data-cp="${esc(c)}">Copy</button></div>`).join("")}</div>
     ${tags ? `<h3>Hashtags</h3><div class="tags">${esc(tags)}</div><div class="row"><button class="btn sm" data-cp="${esc(tags)}">Copy hashtags</button></div>` : ""}
+    ${(r.sources || []).length ? `<h3>Searched sources</h3><div class="list">${r.sources.map(x => `<div class="item"><div><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a></div></div>`).join("")}</div>` : ""}
     ${(r.formats || []).length ? `<h3>Formats working now</h3><div class="list">${r.formats.map(f => `<div class="item"><div><b>${esc(f.name)}</b><span class="hint">${esc(f.how)}</span></div></div>`).join("")}</div>` : ""}
     <div class="mactions"><button class="btn primary" id="mClose">Done</button></div>`);
   $("#modal").classList.add("wide");
@@ -1661,9 +1813,9 @@ function showTrends(r){
   $("#modal").querySelectorAll("[data-cp]").forEach(b => b.onclick = () => copyText(b.dataset.cp));
   $("#modal").querySelectorAll("[data-hook]").forEach(b => b.onclick = () => { const t = b.dataset.hook; $("#modal").classList.remove("wide"); closeModal(); seek(0); addText("title", t); });
 }
-$("#aiBtn").onclick = e => { e.stopPropagation(); const m = $("#aiMenu"); m.hidden = !m.hidden; $("#aiBtn").setAttribute("aria-expanded", !m.hidden); if (!m.hidden){ updAcct(); ensureFirebase().then(ok => { if (!ok) $("#aiAcct").innerHTML = "<span>AI backend not reachable from here</span>"; }); } };
+$("#aiBtn").onclick = e => { e.stopPropagation(); const m = $("#aiMenu"); m.hidden = !m.hidden; $("#aiBtn").setAttribute("aria-expanded", !m.hidden); if (!m.hidden){ updAcct(); if (AIS.engine === "firebase" || AIS.capEngine === "firebase") ensureFirebase().then(ok => { if (!ok) $("#aiAcct").innerHTML = "<span>Firebase backend not reachable from here</span>"; }); } };
 $("#aiMenu").addEventListener("click", e => { const b = e.target.closest("[data-ai]"); if (!b) return; $("#aiMenu").hidden = true;
-  if (b.dataset.ai === "ref") openReferenceEdit(); else if (b.dataset.ai === "caps") openAutoCaptions(); else openTrends(); });
+  if (b.dataset.ai === "ref") openReferenceEdit(); else if (b.dataset.ai === "caps") openAutoCaptions(); else if (b.dataset.ai === "settings") openAISettings(); else openTrends(); });
 document.addEventListener("click", e => { if (!e.target.closest("#aiMenu") && !e.target.closest("#aiBtn")){ $("#aiMenu").hidden = true; $("#aiBtn").setAttribute("aria-expanded", "false"); } });
 
 // ================= wiring =================

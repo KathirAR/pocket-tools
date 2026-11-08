@@ -19,9 +19,10 @@ Open `video-editor/index.html` in Chrome, Edge, Firefox or Safari. Everything ru
 - **Music:** loop, fade, start offset, automatic ducking under speech, beat detection, tap beats (B), snap-to-beat and "cut clips to the beat"
 - **Formats:** 9:16, 4:5, 1:1 and 16:9 with safe-zone guides; export MP4 or WebM at 720p or 1080p
 - **Saving:** autosaves in the browser, plus Project › Save / Open for a portable `.zip`
-- **AI** (needs the Firebase backend in [`functions/`](functions/), see [AI setup](video-editor/AI-SETUP.md)):
+- **AI**, free by default (see [AI setup](video-editor/AI-SETUP.md)):
   - *Make it like a reference:* upload a reel you like plus your clips; the AI drafts a matching edit on the timeline
-  - *Auto captions:* speech to timed, word-by-word captions (English, Tamil, Hindi and more)
+  - *Auto captions:* speech to timed captions, on your own device or with Gemini (English, Tamil, Hindi and more)
   - *Trending ideas:* current Reels songs, hooks, captions and hashtags for your niche
+  - Runs on a free Gemini key and in-browser Whisper; an optional paid Firebase backend in [`functions/`](functions/) uses Claude and Whisper instead
 
 Export records the project in real time, so keep the tab open and in front until it finishes.
