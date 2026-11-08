@@ -63,6 +63,25 @@ header{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
 .menu button{border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}
 .menu button:hover{background:var(--raised)}
 .menu small{display:block;color:var(--muted);font-size:11.5px}
+.mwrap{position:relative;display:inline-flex}
+.mwrap .menu{left:0;right:auto;min-width:260px}
+.btn.ai{border-color:var(--accent);color:var(--accent)}
+.acct{border-top:1px solid var(--line);margin-top:4px;padding:8px 10px 4px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.acct button{padding:4px 8px;border:1px solid var(--line)!important;font-size:12px}
+.steps{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.steps li{display:flex;gap:8px;align-items:center;color:var(--muted)}
+.steps li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.steps li.on{color:var(--fg)} .steps li.on::before{background:var(--accent)}
+.steps li.done::before{background:var(--ok)}
+.drop.sm{margin:0 0 12px;cursor:pointer}
+.list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.item{border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:13px;display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.item div{min-width:0}
+.item b{display:block}
+.item a{color:var(--accent);font-size:12px}
+.tags{font:400 12.5px/1.6 var(--f-mono);color:var(--fg);background:var(--sunk);border-radius:8px;padding:8px 10px;margin-bottom:8px;word-break:break-word}
+.modal.wide{width:min(620px,100%)}
+.modal h3{margin:14px 0 8px;font:700 12px/1 var(--f-body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
 
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .phead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
@@ -236,6 +255,15 @@ details[open] summary{margin-bottom:10px}
     </div>
     <button class="btn icon ghost" id="undoBtn" aria-label="Undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
     <button class="btn icon ghost" id="redoBtn" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+    <span class="mwrap">
+      <button class="btn ai" id="aiBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9zM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>AI</button>
+      <div class="menu" id="aiMenu" hidden>
+        <button data-ai="ref">Make it like a reference<small>Upload a reel you like plus your clips; AI drafts the edit</small></button>
+        <button data-ai="caps">Auto captions<small>Turn the speech in your clips into timed captions</small></button>
+        <button data-ai="trends">Trending ideas<small>Songs, hooks, captions and hashtags for your niche</small></button>
+        <div class="acct" id="aiAcct">Not signed in</div>
+      </div>
+    </span>
     <button class="btn" id="projBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Project</button>
     <div class="menu" id="projMenu" hidden>
       <button data-pm="save">Save project file<small>A .zip with your edit and media, to keep or move</small></button>
@@ -1017,7 +1045,7 @@ function cutToBeats(every){
 function applyLookAll(fx){ checkpoint(); S.clips.forEach(c => c.fx = Object.assign({}, fx)); renderAll(); toast("Look applied to every clip"); }
 
 // ================= modals: steps, collage, tap captions, stickers =================
-function openModal(html){ $("#modal").innerHTML = html; $("#scrim").hidden = false; const f = $("#modal").querySelector("textarea,input,button"); if (f) setTimeout(() => f.focus(), 30); }
+function openModal(html){ $("#modal").className = "modal"; $("#modal").innerHTML = html; $("#scrim").hidden = false; const f = $("#modal").querySelector("textarea,input,button"); if (f) setTimeout(() => f.focus(), 30); }
 function closeModal(){ $("#scrim").hidden = true; $("#modal").innerHTML = ""; }
 function openStickers(){
   openModal(`<h2>Add a sticker</h2><p>Stickers appear at the playhead for 3 seconds. Drag them on the preview, and drag the corner square to resize.</p>
@@ -1062,11 +1090,13 @@ function openCollage(){
 }
 let tap = null;
 function openTapCaptions(){
-  openModal(`<h2>Tap-to-time captions</h2><p>Paste what you say, one caption per line. Then play the video and tap once as each line starts. The last tap ends the final line.</p>
+  openModal(`<h2>Captions</h2><div class="item"><div><b>Auto captions with AI</b><span class="hint">Listens to your clips and writes timed captions. Works in English, Tamil, Hindi and more.</span></div><button class="btn primary sm" id="goAuto">Auto captions</button></div>
+    <h3>Or time them yourself</h3><p>Paste what you say, one caption per line. Then play the video and tap once as each line starts. The last tap ends the final line.</p>
     <textarea class="inp" id="tapIn" rows="7" placeholder="Hey everyone!&#10;Today I'm sharing my budget body care routine&#10;First up, this body wash"></textarea>
     <div class="field" style="margin-top:12px"><span class="flabel">Style</span><div class="seg text" role="group" id="tapStyle"><button data-s="caption" aria-pressed="true">Caption box</button><button data-s="words" aria-pressed="false">Word by word</button><button data-s="pop" aria-pressed="false">Bold pop</button></div></div>
     <p class="note">Tip: you can also import an .srt file from any captioning app, and it lands here as captions you can restyle.</p>
     <div class="mactions"><button class="btn" id="mClose">Cancel</button><button class="btn primary" id="mGo">Start tapping</button></div>`);
+  $("#goAuto").onclick = () => { closeModal(); openAutoCaptions(); };
   let style = "caption";
   $("#tapStyle").querySelectorAll("[data-s]").forEach(b => b.onclick = () => { style = b.dataset.s; $("#tapStyle").querySelectorAll("[data-s]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
   $("#mClose").onclick = closeModal;
@@ -1384,6 +1414,257 @@ function onExportDone(){
     <div class="mactions"><button class="btn" id="mClose">Close</button><button class="btn primary" id="mSave">Save video</button></div>`);
   $("#mClose").onclick = closeModal; $("#mSave").onclick = () => saveBlob(exportBlob, `${slug()}.${ext}`, `Saved ${slug()}.${ext}`);
 }
+
+// ================= AI (Firebase backend) =================
+const FB = { region:"asia-south1", app:null, auth:null, fns:null, user:null, loading:null,
+  config:{ apiKey:"AIzaSyDrAvRK2MPXESFyM3zX7azVbIZfYgC4tLw", authDomain:"pocket-finance-tracker-c1386.firebaseapp.com", projectId:"pocket-finance-tracker-c1386",
+    storageBucket:"pocket-finance-tracker-c1386.firebasestorage.app", messagingSenderId:"809451071433", appId:"1:809451071433:web:ed12a161bedd68eb00aa18" } };
+const loadScript = src => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+function ensureFirebase(){
+  if (FB.app) return Promise.resolve(true);
+  if (!FB.loading) FB.loading = (async () => {
+    try {
+      for (const f of ["app","auth","functions"]) await loadScript(`https://www.gstatic.com/firebasejs/10.14.1/firebase-${f}-compat.js`);
+      FB.app = firebase.initializeApp(FB.config, "cutline"); FB.auth = FB.app.auth(); FB.fns = FB.app.functions(FB.region);
+      await new Promise(r => { const off = FB.auth.onAuthStateChanged(u => { FB.user = u; updAcct(); off(); r(); }); });
+      FB.auth.onAuthStateChanged(u => { FB.user = u; updAcct(); });
+      return true;
+    } catch(e){ FB.loading = null; return false; }
+  })();
+  return FB.loading;
+}
+function aiUnavailable(){
+  openModal(`<h2>AI features aren't reachable here</h2><p>Cutline's AI runs on your Firebase backend. This preview can't connect to it, or the backend hasn't been deployed yet.</p>
+    <p>Open the hosted editor (for example <span class="num">kathirar.github.io/pocket-tools/video-editor/</span>) and follow <span class="num">video-editor/AI-SETUP.md</span> in the repo to deploy the backend.</p>
+    <div class="mactions"><button class="btn" id="mClose">Close</button></div>`); $("#mClose").onclick = closeModal;
+}
+async function ensureSignedIn(){
+  if (!(await ensureFirebase())){ aiUnavailable(); return false; }
+  if (FB.user) return true;
+  try { await FB.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); return !!FB.user || !!FB.auth.currentUser; }
+  catch(e){ toast(e && e.code === "auth/unauthorized-domain" ? "Add this site to Firebase Auth's authorized domains first." : "Sign-in was cancelled."); return false; }
+}
+function updAcct(){ const el = $("#aiAcct"); if (!el) return;
+  if (FB.user){ el.innerHTML = `<span>${esc(FB.user.email || "Signed in")}</span><button id="aiOut">Sign out</button>`; $("#aiOut").onclick = e => { e.stopPropagation(); FB.auth.signOut(); }; }
+  else { el.innerHTML = `<span>Sign in to use AI</span><button id="aiIn">Sign in with Google</button>`; $("#aiIn").onclick = e => { e.stopPropagation(); ensureSignedIn(); }; } }
+async function callFn(name, data){
+  try { return (await FB.fns.httpsCallable(name, { timeout:540000 })(data)).data; }
+  catch(e){ const m = e && e.message || ""; throw new Error(/not-found|internal/i.test(e.code || "") && /not found/i.test(m) ? "The AI backend isn't deployed yet. See AI-SETUP.md." : m || "The request failed."); }
+}
+async function copyText(t, btn){ try { await navigator.clipboard.writeText(t); toast("Copied"); } catch(e){ const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Copied"); } catch(_){ toast("Select the text and copy it."); } ta.remove(); } }
+
+// ---- audio: decode to 16 kHz mono and pack as WAV ----
+async function pcm16k(m){
+  if (m.pcm) return m.pcm;
+  const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!Off) throw new Error("This browser can't read audio.");
+  const ab = await new Off(1, 16000, 16000).decodeAudioData(await m.blob.arrayBuffer());
+  m.pcm = ab.getChannelData(0); return m.pcm;
+}
+function wavB64(s){
+  const n = s.length, buf = new ArrayBuffer(44 + n*2), v = new DataView(buf), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o+i, t.charCodeAt(i)); };
+  w(0,"RIFF"); v.setUint32(4,36+n*2,true); w(8,"WAVE"); w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,16000,true); v.setUint32(28,32000,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,"data"); v.setUint32(40,n*2,true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i*2, clamp(s[i], -1, 1)*32767, true);
+  const u8 = new Uint8Array(buf); let bin = ""; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(bin);
+}
+async function transcribeRange(m, a, b, language, onChunk){
+  const pcm = await pcm16k(m), words = [], segs = [], CH = 110;
+  for (let s = a; s < b - .2; s += CH){
+    const e = Math.min(b, s + CH), slice = pcm.subarray(Math.floor(s*16000), Math.floor(e*16000));
+    const r = await callFn("transcribe", { audio:wavB64(slice), language });
+    (r.words || []).forEach(w => words.push({ start:w.start + s, end:w.end + s, word:w.word }));
+    (r.segments || []).forEach(g => segs.push({ start:g.start + s, end:g.end + s, text:g.text }));
+    onChunk && onChunk((e - a)/(b - a));
+  }
+  return { words, segs };
+}
+function localFromSrc(c, src){ const span = c.out - c.in; if (span <= 0) return 0; const target = clamp((src - c.in)/span, 0, 1);
+  let lo = 0, hi = 1; for (let k = 0; k < 30; k++){ const mid = (lo + hi)/2; rampG(c.ramp, mid) < target ? lo = mid : hi = mid; } return lo*len(c); }
+function groupWords(words, maxWords = 5, maxDur = 2.6){
+  const out = []; let cur = null;
+  words.forEach(w => { if (!w.word) return;
+    if (!cur){ cur = { start:w.start, end:w.end, text:w.word, n:1 }; }
+    else { cur.text += " " + w.word; cur.end = w.end; cur.n++; }
+    if (cur.n >= maxWords || cur.end - cur.start >= maxDur || /[.!?,।]$/.test(w.word)){ out.push(cur); cur = null; } });
+  if (cur) out.push(cur);
+  return out.map(g => ({ start:g.start, end:Math.max(g.end, g.start + .5), text:g.text.replace(/\s+([,.!?])/g, "$1") }));
+}
+function progressModal(title, steps){
+  openModal(`<h2>${esc(title)}</h2><ul class="steps" id="pSteps">${steps.map((s,i) => `<li data-i="${i}">${esc(s)}</li>`).join("")}</ul><div class="bar"><i id="pBar"></i></div><p class="note" id="pNote">Keep this tab open.</p>`);
+  return { step(i){ document.querySelectorAll("#pSteps li").forEach(li => { const k = +li.dataset.i; li.className = k < i ? "done" : k === i ? "on" : ""; }); },
+           bar(p){ const b = $("#pBar"); if (b) b.style.width = (clamp(p,0,1)*100).toFixed(0) + "%"; }, note(t){ const n = $("#pNote"); if (n) n.textContent = t; } };
+}
+const LANGS = [["auto","Detect automatically"],["en","English"],["ta","Tamil"],["hi","Hindi"],["te","Telugu"],["ml","Malayalam"],["kn","Kannada"]];
+function openAutoCaptions(){
+  openModal(`<h2>Auto captions</h2><p>Cutline sends the sound from your clips to your speech service and turns it into timed captions you can restyle.</p>
+    <div class="field"><label for="acLang">Spoken language</label><select class="inp" id="acLang">${opts(LANGS, "auto")}</select></div>
+    <div class="field"><span class="flabel">Style</span><div class="seg text" role="group" id="acStyle"><button data-s="words" aria-pressed="true">Word by word</button><button data-s="caption" aria-pressed="false">Caption box</button><button data-s="pop" aria-pressed="false">Bold pop</button></div></div>
+    <label class="chk"><input type="checkbox" id="acReplace" checked>Replace existing captions</label>
+    <div class="mactions"><button class="btn" id="mClose">Cancel</button><button class="btn primary" id="mGo">Make captions</button></div>`);
+  let style = "words";
+  $("#acStyle").querySelectorAll("[data-s]").forEach(b => b.onclick = () => { style = b.dataset.s; $("#acStyle").querySelectorAll("[data-s]").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+  $("#mClose").onclick = closeModal;
+  $("#mGo").onclick = () => autoCaptions(style, $("#acLang").value, $("#acReplace").checked);
+}
+async function autoCaptions(style, language, replace){
+  refreshLayout();
+  const list = LY.filter(e => { const m = media.get(e.c.mediaId); return m && m.kind === "video" && !e.c.muted; });
+  if (!list.length){ closeModal(); toast("Add video clips with speech first."); return; }
+  if (!(await ensureSignedIn())) return;
+  const pm = progressModal("Making captions", ["Reading audio from your clips", "Transcribing speech", "Placing captions"]);
+  try {
+    const all = []; pm.step(0);
+    for (let k = 0; k < list.length; k++){ const e = list[k], m = media.get(e.c.mediaId);
+      pm.step(1); pm.note(`Clip ${k+1} of ${list.length}: ${m.name}`);
+      const { words } = await transcribeRange(m, e.c.in, e.c.out, language, p => pm.bar((k + p)/list.length));
+      const visibleEnd = e.end - e.td;
+      words.forEach(w => { const s = e.start + localFromSrc(e.c, w.start), en = e.start + localFromSrc(e.c, w.end); if (s >= e.start - .05 && s < visibleEnd) all.push({ start:s, end:Math.min(en, visibleEnd), word:w.word }); });
+    }
+    pm.step(2);
+    if (!all.length){ closeModal(); toast("No speech found in your clips."); return; }
+    checkpoint();
+    if (replace) S.texts = S.texts.filter(x => !["caption","words"].includes(x.preset) || x.auto !== true);
+    const lang = language === "ta" || /[஀-௿]/.test(all.map(w => w.word).join(""));
+    groupWords(all.sort((a,b) => a.start - b.start), style === "words" ? 4 : 6).forEach(g => { const x = mkText(style, g.text, g.start, g.end); x.auto = true; if (lang) x.font = "tamil"; S.texts.push(x); });
+    closeModal(); renderAll(); toast("Captions added. Click any caption to edit its words.");
+  } catch(e){ closeModal(); toast(e.message || "Captions failed."); }
+}
+
+// ---- reference + clip analysis ----
+function loadVideo(blob){ return new Promise((res, rej) => { const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = URL.createObjectURL(blob);
+  v.addEventListener("loadedmetadata", () => fixDuration(v, () => res(v)), { once:true }); v.addEventListener("error", () => rej(new Error("Couldn't read that video. Try an MP4.")), { once:true }); }); }
+const seekTo = (v, t) => new Promise(res => { let done = false; const fin = () => { if (!done){ done = true; v.removeEventListener("seeked", fin); res(); } }; v.addEventListener("seeked", fin); setTimeout(fin, 2500); v.currentTime = clamp(t, 0, Math.max(0, v.duration - .05)); });
+function grabJpeg(src, sw, sh, maxW = 360, maxH = 640, q = .62){ const s = Math.min(maxW/sw, maxH/sh, 1), c = document.createElement("canvas"); c.width = Math.round(sw*s); c.height = Math.round(sh*s);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height); return c.toDataURL("image/jpeg", q).split(",")[1]; }
+async function analyzeReference(file, onProg){
+  const v = await loadVideo(file), dur = v.duration, sm = document.createElement("canvas"); sm.width = 32; sm.height = 48; const sx = sm.getContext("2d", { willReadFrequently:true });
+  const step = Math.max(1/6, dur/320), diffs = []; let prev = null;
+  for (let t = 0; t < dur; t += step){ await seekTo(v, t); sx.drawImage(v, 0, 0, 32, 48); const d = sx.getImageData(0, 0, 32, 48).data;
+    if (prev){ let s = 0; for (let i = 0; i < d.length; i += 4) s += Math.abs(d[i] - prev[i]) + Math.abs(d[i+1] - prev[i+1]) + Math.abs(d[i+2] - prev[i+2]); diffs.push({ t, d:s/(d.length/4*765) }); }
+    prev = d; onProg(t/dur*.75); }
+  const mean = diffs.reduce((a,b) => a + b.d, 0)/Math.max(1, diffs.length), sd = Math.sqrt(diffs.reduce((a,b) => a + (b.d - mean)**2, 0)/Math.max(1, diffs.length));
+  const th = Math.max(.09, mean + 2.2*sd), cuts = [0];
+  diffs.forEach(x => { if (x.d > th && x.t - cuts[cuts.length-1] > .35) cuts.push(r2(x.t - step/2)); });
+  const shots = cuts.map((c, i) => ({ start:c, end:i < cuts.length - 1 ? cuts[i+1] : r2(dur) }));
+  let times = shots.map(s => (s.start + s.end)/2); if (times.length < 8) for (let t = 1; t < dur; t += Math.max(1.5, dur/10)) times.push(t);
+  times = [...new Set(times.map(t => r2(t)))].sort((a,b) => a - b); while (times.length > 18) times = times.filter((_, i) => i % 2 === 0);
+  const frames = [];
+  for (let i = 0; i < times.length; i++){ await seekTo(v, times[i]); frames.push({ t:times[i], b64:grabJpeg(v, v.videoWidth, v.videoHeight) }); onProg(.75 + .25*i/times.length); }
+  const out = { duration:dur, width:v.videoWidth, height:v.videoHeight, shots, avgShot:dur/shots.length, frames };
+  URL.revokeObjectURL(v.src); return out;
+}
+async function clipFrames(m){
+  if (m.kind === "image") return [{ t:0, b64:grabJpeg(m.el, m.width, m.height, 320, 560) }];
+  if (m.kind === "sample"){ const c = document.createElement("canvas"); c.width = 180; c.height = 320; const x = c.getContext("2d"); return [1, 3].map(t => { m.scene(x, 180, 320, t); return { t, b64:c.toDataURL("image/jpeg", .6).split(",")[1] }; }); }
+  const v = await loadVideo(m.blob), d = v.duration, n = d > 25 ? 6 : d > 8 ? 5 : 4, out = [];
+  for (let k = 0; k < n; k++){ const t = d*(k + .5)/n; await seekTo(v, t); out.push({ t:r2(t), b64:grabJpeg(v, v.videoWidth, v.videoHeight, 320, 560, .58) }); }
+  URL.revokeObjectURL(v.src); return out;
+}
+function openReferenceEdit(){
+  const usable = [...media.values()].filter(m => (m.kind === "video" || m.kind === "image") && !m.sample);
+  openModal(`<div class="modal-body"><h2>Make it like a reference</h2><p>Upload a reel you want to match (a screen recording works). The AI studies its cuts, text and look, then drafts your edit on the timeline using your clips. You can change everything afterwards.</p>
+    <label class="drop sm" id="refDrop" for="refIn"><strong id="refName">Choose the reference video</strong><br><span>MP4 or MOV, up to about 90 seconds</span></label><input type="file" id="refIn" accept="video/*" hidden>
+    <div class="field"><span class="flabel">Your clips (${usable.length})</span>${usable.length ? `<div class="pick">${usable.map(m => `<label style="background-image:url(${m.thumb || ""})" title="${esc(m.name)}"><input type="checkbox" value="${m.id}" checked></label>`).join("")}</div>` : `<span class="hint">Import your clips and photos into Media first.</span>`}</div>
+    <div class="field"><label for="refGoal">What's this video for?</label><textarea class="inp" id="refGoal" rows="2" placeholder="Promote my plaid shirt, comment LINK to get it"></textarea></div>
+    <div class="pair" style="margin-bottom:14px"><label>Text language<select class="inp" id="refLang"><option>English</option><option>Tamil</option><option>Tanglish (Tamil in English letters)</option><option>Hindi</option><option>English + Tamil mix</option></select></label>
+      <label>Length<select class="inp" id="refLen"><option value="match">Match the reference</option><option value="15">15 s</option><option value="30">30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label></div>
+    <label class="chk"><input type="checkbox" id="refSpeech">My clips have talking (transcribe them so the AI can pick the best lines)</label>
+    <p class="note">Your current timeline is replaced by the draft. Undo brings it back.</p>
+    <div class="mactions"><button class="btn" id="mClose">Cancel</button><button class="btn primary" id="mGo" ${usable.length ? "" : "disabled"}>Create draft</button></div></div>`);
+  $("#modal").classList.add("wide");
+  let refFile = null;
+  $("#refIn").onchange = e => { refFile = e.target.files[0] || null; $("#refName").textContent = refFile ? refFile.name : "Choose the reference video"; };
+  $("#mClose").onclick = () => { $("#modal").classList.remove("wide"); closeModal(); };
+  $("#mGo").onclick = () => { const ids = [...$("#modal").querySelectorAll(".pick input:checked")].map(i => i.value);
+    if (!refFile){ toast("Choose the reference video first."); return; } if (!ids.length){ toast("Pick at least one clip."); return; }
+    runReferenceEdit(refFile, ids, { goal:$("#refGoal").value.trim(), language:$("#refLang").value, len:$("#refLen").value, speech:$("#refSpeech").checked }); };
+}
+async function runReferenceEdit(refFile, ids, o){
+  if (!(await ensureSignedIn())) return;
+  $("#modal").classList.remove("wide");
+  const pm = progressModal("Drafting your edit", ["Studying the reference's cuts and frames", "Looking at your clips", o.speech ? "Transcribing your clips" : "Preparing", "Writing the edit plan", "Building the timeline"]);
+  try {
+    pm.step(0); const ref = await analyzeReference(refFile, p => pm.bar(p)); pm.note(`Reference: ${ref.shots.length} shots, about ${ref.avgShot.toFixed(1)} s each.`);
+    pm.step(1); const clips = [];
+    for (let k = 0; k < ids.length; k++){ const m = media.get(ids[k]); if (!m) continue; pm.bar(k/ids.length);
+      clips.push({ id:m.id, kind:m.kind, name:m.name, duration:m.kind === "video" ? m.duration : 3, width:m.width, height:m.height, frames:await clipFrames(m) }); }
+    pm.step(2);
+    if (o.speech) for (let k = 0; k < clips.length; k++){ const c = clips[k], m = media.get(c.id); if (m.kind !== "video") continue; pm.note(`Transcribing ${m.name}`); pm.bar(k/clips.length);
+      const { segs } = await transcribeRange(m, 0, Math.min(m.duration, 180), "auto"); c.transcript = segs.map(s => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`).join(" "); }
+    pm.step(3); pm.bar(.1); pm.note("This takes about 20–60 seconds.");
+    let music = null; if (S.music){ const mm = media.get(S.music.mediaId); music = { bpm:mm && mm.beatInfo ? mm.beatInfo.bpm : 0, beats:S.beats.slice(0, 80) }; }
+    const target = o.len === "match" ? ref.duration : +o.len;
+    const res = await callFn("planEdit", { aspect:S.aspect, targetLength:target, language:o.language, goal:o.goal, music, reference:ref, clips });
+    pm.step(4); pm.bar(1);
+    applyPlan(res.plan); showPlanResult(res.plan, o);
+  } catch(e){ closeModal(); toast(e.message || "The AI couldn't make a draft."); }
+}
+const pickEnum = (v, list, d) => list.some(x => (Array.isArray(x) ? x[0] : x) === v) ? v : d;
+function applyPlan(plan){
+  const segs = (plan.segments || []).map(s => { const m = media.get(s.mediaId); if (!m || m.kind === "audio") return null;
+    let a = num0(s.in), b = num0(s.out);
+    if (m.kind === "video"){ a = clamp(a, 0, Math.max(0, m.duration - .2)); b = clamp(b, a + .2, m.duration); } else { b = clamp(b - a || 2.5, .6, 8); a = 0; }
+    return mkClip(m.id, b, { in:a, out:b, speed:clamp(num0(s.speed) || 1, .25, 4), motion:pickEnum(s.motion, MOTIONS, "none"),
+      fx:mkFx(pickEnum(plan.look, Object.keys(LOOKS), "original")), trans:{ type:pickEnum(s.transition, TRANS, "none"), d:clamp(num0(s.transitionDuration) || .4, .15, 1.2) },
+      fit:m.kind === "video" && (m.width >= m.height) !== (W >= H) ? "fit" : "fill" }); }).filter(Boolean);
+  if (!segs.length) throw new Error("The AI's plan didn't use any of your clips. Try again.");
+  checkpoint();
+  S.clips = segs; refreshLayout(); const tot = total();
+  S.texts = (plan.texts || []).filter(t => t && t.text).map(t => { const st = clamp(num0(t.start), 0, tot), x = mkText(pickEnum(t.style, Object.keys(PRESETS), "title"), String(t.text).slice(0, 200), st, clamp(num0(t.end) || st + 2.5, st + .3, tot));
+    if (FONTS[t.font]) x.font = t.font; if (isFinite(t.y)) x.y = clamp(+t.y, .08, .85); if (t.animation) x.anim = pickEnum(t.animation, ["none","fade","pop","slide","float","type","words"], x.anim); return x; });
+  S.overlays = (plan.stickers || []).filter(s => s && s.emoji).slice(0, 12).map(s => { const st = clamp(num0(s.start), 0, tot);
+    return { id:uid("o"), kind:"emoji", emoji:String(s.emoji).slice(0, 8), start:st, end:clamp(num0(s.end) || st + 2, st + .3, tot), x:clamp(isFinite(s.x) ? +s.x : .78, .05, .95), y:clamp(isFinite(s.y) ? +s.y : .3, .08, .85), w:clamp(isFinite(s.size) ? +s.size : .15, .06, .4), rot:0, opacity:1, anim:"pop", shadow:false }; });
+  sel = null; T = 0; renderAll();
+}
+const num0 = v => (Number.isFinite(+v) ? +v : 0);
+function showPlanResult(plan, o){
+  const tags = (plan.hashtags || []).map(h => h.startsWith("#") ? h : "#" + h).join(" "), mus = plan.music || {};
+  openModal(`<h2>Your draft is on the timeline</h2><p>${esc(plan.summary || "")}</p>
+    <dl class="kv"><dt>Clips</dt><dd>${S.clips.length}</dd><dt>Length</dt><dd>${fmt(total())}</dd><dt>Look</dt><dd>${esc((LOOKS[plan.look] || LOOKS.original).label)}</dd><dt>Text layers</dt><dd>${S.texts.length}</dd></dl>
+    ${plan.postCaption ? `<h3>Post caption</h3><div class="tags" id="prCap">${esc(plan.postCaption)}</div><div class="row" style="margin-bottom:8px"><button class="btn sm" id="cpCap">Copy caption</button></div>` : ""}
+    ${tags ? `<h3>Hashtags</h3><div class="tags">${esc(tags)}</div><div class="row" style="margin-bottom:8px"><button class="btn sm" id="cpTags">Copy hashtags</button></div>` : ""}
+    ${mus.mood ? `<h3>Music to look for</h3><p>${esc(mus.mood)}${mus.bpm ? ` · around ${Math.round(mus.bpm)} BPM` : ""}${(mus.searchTerms || []).length ? `<br>Search Instagram audio for: ${esc(mus.searchTerms.join(", "))}` : ""}</p>` : ""}
+    <div class="mactions">${plan.captionsFromSpeech && o.speech ? `<button class="btn" id="prCaps">Add captions from speech</button>` : ""}<button class="btn" id="prTrends">Find trending songs</button><button class="btn primary" id="mClose">Edit the draft</button></div>`);
+  $("#mClose").onclick = closeModal;
+  if ($("#cpCap")) $("#cpCap").onclick = () => copyText(plan.postCaption);
+  if ($("#cpTags")) $("#cpTags").onclick = () => copyText(tags);
+  if ($("#prCaps")) $("#prCaps").onclick = () => autoCaptions("words", "auto", true);
+  $("#prTrends").onclick = () => openTrends(o.goal);
+}
+let lastTrendNiche = "";
+function openTrends(niche){
+  openModal(`<h2>Trending ideas</h2><p>The AI searches the web for what's trending on Reels in your niche right now: songs, hooks, captions and hashtags.</p>
+    <div class="field"><label for="trNiche">Your niche or what this video is about</label><input class="inp" id="trNiche" value="${esc(niche || lastTrendNiche || "")}" placeholder="Budget skincare for college girls"></div>
+    <div class="pair" style="margin-bottom:14px"><label>Audience<select class="inp" id="trRegion"><option>Tamil Nadu</option><option>India</option><option>South India</option><option>Global</option></select></label>
+      <label>Caption language<select class="inp" id="trLang"><option>English</option><option>Tamil</option><option>Tanglish</option><option>Hindi</option></select></label></div>
+    <div class="mactions"><button class="btn" id="mClose">Cancel</button><button class="btn primary" id="mGo">Find trends</button></div>`);
+  $("#mClose").onclick = closeModal;
+  $("#mGo").onclick = async () => { const n = $("#trNiche").value.trim(); if (!n){ toast("Describe your niche first."); return; } lastTrendNiche = n;
+    const region = $("#trRegion").value, language = $("#trLang").value;
+    if (!(await ensureSignedIn())) return;
+    const pm = progressModal("Searching for trends", ["Searching the web", "Picking what fits your niche"]); pm.step(0); pm.bar(.3); pm.note("This takes about 30–60 seconds.");
+    try { const r = await callFn("trends", { niche:n, region, language }); pm.step(1); pm.bar(1); showTrends(r); }
+    catch(e){ closeModal(); toast(e.message || "Couldn't fetch trends."); } };
+}
+function showTrends(r){
+  const tags = (r.hashtags || []).map(h => h.startsWith("#") ? h : "#" + h).join(" ");
+  openModal(`<h2>Trending for ${esc(r.niche)}</h2><p>${esc(r.region)} · from a web search on ${esc(r.asOf)}${r.cached ? " (saved earlier today)" : ""}. ${esc(r.notes || "")}</p>
+    <h3>Songs</h3><div class="list">${(r.songs || []).map(s => `<div class="item"><div><b>${esc(s.title)}${s.artist ? " · " + esc(s.artist) : ""}</b><span class="hint">${s.from ? esc(s.from) + " · " : ""}${esc(s.why)}</span>${s.source ? `<br><a href="${esc(s.source)}" target="_blank" rel="noopener">Source</a>` : ""}</div><button class="btn sm" data-cp="${esc(s.title + (s.artist ? " " + s.artist : ""))}">Copy</button></div>`).join("") || `<span class="hint">No songs confirmed.</span>`}</div>
+    <p class="note">Add the song from Instagram's audio library when you post. Trending tracks can't be downloaded into the editor.</p>
+    <h3>Hooks for on-screen text</h3><div class="list">${(r.hooks || []).map(h => `<div class="item"><div>${esc(h)}</div><button class="btn sm" data-hook="${esc(h)}">Add as title</button></div>`).join("")}</div>
+    <h3>Post captions</h3><div class="list">${(r.captions || []).map(c => `<div class="item"><div>${esc(c)}</div><button class="btn sm" data-cp="${esc(c)}">Copy</button></div>`).join("")}</div>
+    ${tags ? `<h3>Hashtags</h3><div class="tags">${esc(tags)}</div><div class="row"><button class="btn sm" data-cp="${esc(tags)}">Copy hashtags</button></div>` : ""}
+    ${(r.formats || []).length ? `<h3>Formats working now</h3><div class="list">${r.formats.map(f => `<div class="item"><div><b>${esc(f.name)}</b><span class="hint">${esc(f.how)}</span></div></div>`).join("")}</div>` : ""}
+    <div class="mactions"><button class="btn primary" id="mClose">Done</button></div>`);
+  $("#modal").classList.add("wide");
+  $("#mClose").onclick = () => { $("#modal").classList.remove("wide"); closeModal(); };
+  $("#modal").querySelectorAll("[data-cp]").forEach(b => b.onclick = () => copyText(b.dataset.cp));
+  $("#modal").querySelectorAll("[data-hook]").forEach(b => b.onclick = () => { const t = b.dataset.hook; $("#modal").classList.remove("wide"); closeModal(); seek(0); addText("title", t); });
+}
+$("#aiBtn").onclick = e => { e.stopPropagation(); const m = $("#aiMenu"); m.hidden = !m.hidden; $("#aiBtn").setAttribute("aria-expanded", !m.hidden); if (!m.hidden){ updAcct(); ensureFirebase().then(ok => { if (!ok) $("#aiAcct").innerHTML = "<span>AI backend not reachable from here</span>"; }); } };
+$("#aiMenu").addEventListener("click", e => { const b = e.target.closest("[data-ai]"); if (!b) return; $("#aiMenu").hidden = true;
+  if (b.dataset.ai === "ref") openReferenceEdit(); else if (b.dataset.ai === "caps") openAutoCaptions(); else openTrends(); });
+document.addEventListener("click", e => { if (!e.target.closest("#aiMenu") && !e.target.closest("#aiBtn")){ $("#aiMenu").hidden = true; $("#aiBtn").setAttribute("aria-expanded", "false"); } });
 
 // ================= wiring =================
 $("#playBtn").onclick = toggle; $("#toStart").onclick = () => seek(0); $("#toEnd").onclick = () => seek(total());
